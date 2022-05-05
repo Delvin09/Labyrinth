@@ -7,14 +7,28 @@ namespace Labyrinth
         void Render();
     }
 
+    public struct Cell
+    {
+        public const char EMPTY = ' ';
+        public const char FULL = 'X';
+        public const char START = 'S';
+        public const char END = 'E';
+
+        public char Value { get; set; }
+
+        public Cell()
+        {
+        }
+    }
+
     public class Labyrinth : IRendererObject
     {
         private readonly int _columns, _rows;
-        private readonly char[,] _grid;
+        private readonly Cell[,] _grid;
 
         public Labyrinth(int columns = 10, int rows = 10)
         {
-            _grid = new char[columns, rows];
+            _grid = new Cell[columns, rows];
         }
 
         public void Render()
