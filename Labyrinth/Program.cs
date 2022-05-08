@@ -5,13 +5,99 @@ using System.Linq;
 
 namespace Labyrinth
 {
+    public static class GenericAlgorithms
+    {
+        public static IEnumerable<SearchState<T>> DeptSearch_v1<T>(T begin, T end, Func<T, IEnumerable<T>> getNext)
+        {
+            var explored = new HashSet<T>();
+            var states = new Stack<SearchState<T>>();
+            states.Push(new SearchState<T>(begin, getNext(begin)));
+            explored.Add(begin);
+
+            while (states.Count > 0)
+            {
+                var current = states.Peek();
+                if (current.Possible.Contains(end))
+                    break;
+
+                var nextLocIndex = current.Possible.FindIndex(s => !explored.Contains(s));
+                if (nextLocIndex >= 0)
+                {
+                    var move = current.Possible.ElementAt(nextLocIndex);
+                    explored.Add(move);
+                    states.Push(new SearchState<T>(move, getNext(move)));
+                }
+                else
+                {
+                    states.Pop();
+                }
+            }
+            return states;
+        }
+
+        public static IEnumerable<SearchState<T>> DeptSearch_v2<T>(T begin, T end, Func<T, IEnumerable<T>> getNext)
+        {
+            HashSet<T> explored = new HashSet<T>();
+            Stack<SearchState<T>> states = new Stack<SearchState<T>>();
+            states.Push(new SearchState<T>(begin, getNext(begin)));
+            explored.Add(begin);
+
+            while (states.Count > 0)
+            {
+                var current = states.Pop();
+                if (current.Possible.Contains(end))
+                    break;
+
+                foreach (var move in current.Possible.Where(s => !explored.Contains(s)))
+                {
+                    explored.Add(move);
+                    states.Push(new SearchState<T>(move, getNext(move), current));
+                }
+            }
+            return states;
+        }
+
+        public static IEnumerable<T> WideSearch<T>(T begin, T end, Func<T, IEnumerable<T>> getNext)
+        {
+            HashSet<T> explored = new HashSet<T>();
+            Queue<SearchState<T>> states = new Queue<SearchState<T>>();
+            states.Enqueue(new SearchState<T>(begin, getNext(begin).ToList()));
+            explored.Add(begin);
+
+            while (states.Count > 0)
+            {
+                var current = states.Dequeue();
+                if (current.Possible.Contains(end))
+                    break;
+
+                foreach (var move in current.Possible.Where(l => !explored.Contains(l)))
+                {
+                    explored.Add(move);
+                    states.Enqueue(new SearchState<T>(move, getNext(move), current));
+                }
+            }
+            return states.LastOrDefault().GetPath();
+        }
+
+        private static IEnumerable<T> GetPath<T>(this SearchState<T> state)
+        {
+            while (state != null)
+            {
+                yield return state.Current;
+                state = state.Parent;
+            }
+        }
+    }
+
     public class Labyrinth : IRendererObject
     {
         private readonly int _columns, _rows;
-        private readonly Location _start;
-        private readonly Location _end;
         private readonly Cell[,] _grid;
         private static readonly Random _random = new Random();
+
+        public Location Start { get; }
+
+        public Location End { get;  }
 
         public Labyrinth()
             : this(columns: 10, rows: 10, start: new Location(0, 0), end: new Location(9, 9), ratio: 0.14f)
@@ -22,8 +108,8 @@ namespace Labyrinth
         {
             _columns = columns;
             _rows = rows;
-            _start = start;
-            _end = end;
+            Start = start;
+            End = end;
             _grid = new Cell[columns, rows];
             Generate(ratio);
         }
@@ -39,8 +125,8 @@ namespace Labyrinth
                         _grid[i, j] = Cell.EMPTY;
                 }
 
-            _grid[_start.Column, _start.Row] = Cell.START;
-            _grid[_end.Column, _end.Row] = Cell.END;
+            _grid[Start.Column, Start.Row] = Cell.START;
+            _grid[End.Column, End.Row] = Cell.END;
         }
 
         public void Render(Location? hightlight = null)
@@ -64,54 +150,7 @@ namespace Labyrinth
             Console.ReadLine();
         }
 
-        public class SearchState
-        {
-            public Location Current { get; set; }
-            public List<Location> Possible { get; set; }
-
-            public SearchState(Location current, List<Location> possible)
-            {
-                Current = current;
-                Possible = possible;
-            }
-        }
-
-        public IEnumerable<SearchState> DeepSearch()
-        {
-            HashSet<Location> explored = new HashSet<Location>();
-            Stack<SearchState> states = new Stack<SearchState>();
-            states.Push(new SearchState(_start, PossibeMoves(_start).ToList()));
-            explored.Add(_start);
-
-            while (states.Count > 0)
-            {
-                var current = states.Peek();
-                if (current.Possible.Contains(_end))
-                    break;
-
-                var nextLocIndex = current.Possible.FindIndex(s => !explored.Contains(s));
-                if (nextLocIndex >= 0)
-                {
-                    var move = current.Possible[nextLocIndex];
-                    if (_grid[move.Column, move.Row] == Cell.END)
-                        break; // find the way
-
-                    _grid[move.Column, move.Row] = Cell.PATHED;
-                    Render(move);
-
-                    explored.Add(move);
-                    states.Push(new SearchState(move, PossibeMoves(move).ToList()));
-                }
-                else
-                {
-                    var move = states.Pop();
-                    _grid[move.Current.Column, move.Current.Row] = Cell.EMPTY;
-                }
-            }
-            return states;
-        }
-
-        private IEnumerable<Location> PossibeMoves(Location position)
+        public IEnumerable<Location> PossibeMoves(Location position)
         {
             var nextColumn = position.Column + 1;
             var prevColumn = position.Column - 1;
@@ -130,6 +169,31 @@ namespace Labyrinth
             if (prevRow < _rows && prevRow >= 0 && _grid[position.Column, prevRow] != Cell.BLOCED)
                 yield return new Location(position.Column, prevRow);
         }
+
+        public void AcceptPath(IEnumerable<Location> searchResult)
+        {
+            foreach (var location in searchResult)
+            {
+                _grid[location.Column, location.Row] = Cell.PATHED;
+            }
+            _grid[Start.Column, Start.Row] = Cell.START;
+            _grid[End.Column, End.Row] = Cell.END;
+        }
+
+        public void Clear()
+        {
+
+            for (int i = 0; i < _columns; i++)
+            {
+                for (int j = 0; j < _rows; j++)
+                {
+                    if (_grid[i, j] == Cell.PATHED)
+                        _grid[i, j] = Cell.EMPTY;
+                }
+            }
+            _grid[Start.Column, Start.Row] = Cell.START;
+            _grid[End.Column, End.Row] = Cell.END;
+        }
     }
 
 
@@ -139,7 +203,21 @@ namespace Labyrinth
         {
             var lab = new Labyrinth();
             lab.Render();
-            var searchResult = lab.DeepSearch();
+
+            var path = GenericAlgorithms.DeptSearch_v1(lab.Start, lab.End, lab.PossibeMoves).Select(r => r.Current);
+            lab.AcceptPath(path);
+            lab.Render();
+            lab.Clear();
+
+            path = GenericAlgorithms.DeptSearch_v2(lab.Start, lab.End, lab.PossibeMoves).Select(r => r.Current);;
+            lab.AcceptPath(path);
+            lab.Render();
+            lab.Clear();
+
+            path = GenericAlgorithms.WideSearch(lab.Start, lab.End, lab.PossibeMoves);
+            lab.AcceptPath(path);
+            lab.Render();
+            lab.Clear();
         }
     }
 }
